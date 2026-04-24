@@ -1,0 +1,74 @@
+const express = require('express');
+const router = express.Router();
+const { protect } = require('../middlewares/authMiddleware');
+const Client = require('../Model/Client');
+const History = require('../Model/History');
+
+const logHistory = async (req, staffId, action) => {
+  await History.create({ staffId, staffName: req.user.name, action });
+};
+
+router.post('/clients', protect, async (req, res) => {
+  const { name, email, phone, personalInfo, validityStart, validityEnd, paymentStatus } = req.body;
+  try {
+    const client = await Client.create({
+      name, email, phone, personalInfo, validityStart, validityEnd, paymentStatus,
+      assignedStaff: req.user._id
+    });
+    await logHistory(req, req.user._id, `Added new client: ${name}`);
+    res.status(201).json(client);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.get('/clients', protect, async (req, res) => {
+  const clients = await Client.find({ assignedStaff: req.user._id });
+  res.json(clients);
+});
+
+router.put('/clients/:id', protect, async (req, res) => {
+  const client = await Client.findOne({ _id: req.params.id, assignedStaff: req.user._id });
+  if (client) {
+    Object.assign(client, req.body);
+    const updated = await client.save();
+    await logHistory(req, req.user._id, `Updated client info for: ${client.name}`);
+    res.json(updated);
+  } else {
+    res.status(404).json({ message: 'Client not found or unassigned' });
+  }
+});
+
+router.delete('/clients/:id', protect, async (req, res) => {
+  const client = await Client.findOne({ _id: req.params.id, assignedStaff: req.user._id });
+  if (client) {
+    await client.deleteOne();
+    await logHistory(req, req.user._id, `Deleted client: ${client.name}`);
+    res.json({ message: 'Client removed' });
+  } else {
+    res.status(404).json({ message: 'Client not found or unassigned' });
+  }
+});
+
+router.post('/clients/:id/payments', protect, async (req, res) => {
+  const { amount, particular } = req.body;
+  const client = await Client.findOne({ _id: req.params.id, assignedStaff: req.user._id });
+  if (client) {
+    client.paymentHistory.push({ amount, particular });
+    if(client.paymentStatus === 'pending') {
+      client.paymentStatus = 'paid'; // simplify assumption for demo
+    }
+    await client.save();
+    await logHistory(req, req.user._id, `Added payment of ${amount} for client: ${client.name}`);
+    res.status(201).json(client);
+  } else {
+    res.status(404).json({ message: 'Client not found' });
+  }
+});
+
+router.get('/history', protect, async (req, res) => {
+  const history = await History.find({ staffId: req.user._id }).sort({ date: -1 });
+  res.json(history);
+});
+
+module.exports = router;
