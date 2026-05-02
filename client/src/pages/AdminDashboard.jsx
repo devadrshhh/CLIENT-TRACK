@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../AuthContext';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Container, Typography, Box, Button, Tabs, Tab, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Grid, Chip } from '@mui/material';
+import { Container, Typography, Box, Button, Tabs, Tab, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Grid, Chip, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import { People, Assessment, Settings as SettingsIcon, Logout, Add, Delete, Edit } from '@mui/icons-material';
 
 export default function AdminDashboard() {
@@ -12,6 +12,9 @@ export default function AdminDashboard() {
   const [staffList, setStaffList] = useState([]);
   const [clients, setClients] = useState([]);
   const [history, setHistory] = useState([]);
+  
+  const [editClientModal, setEditClientModal] = useState(false);
+  const [editClient, setEditClient] = useState({ id: '', name: '', email: '', password: '', amountDue: '' });
   
   const [newStaff, setNewStaff] = useState({ name: '', email: '', password: '' });
 
@@ -55,10 +58,25 @@ export default function AdminDashboard() {
   };
 
   const updateTemplate = async (id, currentTemplate) => {
-    const defaultTpl = 'Hello {ClientName}, your payment for {Particular} is currently pending. Please complete it to maintain validity. Thank you!';
+    const defaultTpl = 'Hello {ClientName}, your payment of {amount} for {Particular} is currently pending. Please complete it here: {paymentlink}';
     const tpl = window.prompt("Update WhatsApp Template for this staff:", currentTemplate || defaultTpl);
     if(tpl) {
       await axios.put(`http://localhost:5000/api/admin/staff/${id}/template`, { whatsappTemplate: tpl }, getHeaders());
+    }
+  };
+
+  const handleEditClientSave = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`http://localhost:5000/api/admin/clients/${editClient.id}`, editClient, getHeaders());
+      setEditClientModal(false);
+      fetchData();
+    } catch (err) { alert('Error updating client'); }
+  };
+
+  const deleteClient = async (id) => {
+    if(window.confirm('Delete this client?')) {
+      await axios.delete(`http://localhost:5000/api/admin/clients/${id}`, getHeaders());
       fetchData();
     }
   };
@@ -143,10 +161,21 @@ export default function AdminDashboard() {
                   <Grid item xs={12} sm={6} md={4} key={c._id}>
                     <Paper variant="outlined" sx={{ p: 3 }}>
                       <Typography variant="h6">{c.name}</Typography>
-                      <Typography variant="body2" color="text.secondary" mb={2}>Managed by: {c.assignedStaff?.name || 'Unknown'}</Typography>
+                      <Typography variant="body2" color="text.secondary" mb={2}>Managed by: {staffList.find(s => s._id === c.assignedStaff)?.name || 'Unknown'}</Typography>
                       <Box display="flex" justifyContent="space-between" alignItems="center">
                         <Chip label={c.paymentStatus} color={c.paymentStatus === 'paid' ? 'success' : 'warning'} size="small" />
                         <Typography variant="caption">Validity: {new Date(c.validityEnd).toLocaleDateString()}</Typography>
+                      </Box>
+                      <Box display="flex" gap={1} mt={2}>
+                        <Button variant="outlined" size="small" onClick={() => {
+                          setEditClient({ id: c._id, name: c.name, email: c.email, password: '', amountDue: c.amountDue || '' });
+                          setEditClientModal(true);
+                        }} sx={{ flex: 1 }}>
+                          Edit
+                        </Button>
+                        <Button variant="contained" color="error" size="small" onClick={() => deleteClient(c._id)} sx={{ flex: 1 }}>
+                          Delete
+                        </Button>
                       </Box>
                     </Paper>
                   </Grid>
@@ -162,15 +191,15 @@ export default function AdminDashboard() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Date & Time</TableCell>
-                    <TableCell>Staff Member</TableCell>
-                    <TableCell>Action Executed</TableCell>
+                    <TableCell>Paid By</TableCell>
+                    <TableCell>Action</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {history.map(h => (
                     <TableRow key={h._id}>
                       <TableCell sx={{ color: 'text.secondary' }}>{new Date(h.date).toLocaleString()}</TableCell>
-                      <TableCell sx={{ fontWeight: 500 }}>{h.staffId?.name}</TableCell>
+                      <TableCell sx={{ fontWeight: 500 }}>{h.staffName || 'Unknown'}</TableCell>
                       <TableCell>{h.action}</TableCell>
                     </TableRow>
                   ))}
@@ -183,7 +212,7 @@ export default function AdminDashboard() {
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" fontWeight="bold" mb={1}>WhatsApp Templates Configurations</Typography>
               <Typography variant="body2" color="text.secondary" mb={4}>
-                Define specific automated messages for your staff to send. Legend: {"{ClientName}"}, {"{Particular}"}
+                Define specific automated messages for your staff to send. Legend: {"{ClientName}"}, {"{Particular}"}, {"{amount}"}, {"{paymentlink}"}
               </Typography>
               
               {staffList.map(s => (
@@ -205,6 +234,22 @@ export default function AdminDashboard() {
           )}
         </motion.div>
       </AnimatePresence>
+
+      <Dialog open={editClientModal} onClose={() => setEditClientModal(false)}>
+        <DialogTitle>Edit Client</DialogTitle>
+        <DialogContent>
+          <Box component="form" id="edit-client-form-admin" onSubmit={handleEditClientSave} sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2, minWidth: '300px' }}>
+            <TextField label="Name" value={editClient.name} onChange={e=>setEditClient({...editClient, name: e.target.value})} required fullWidth />
+            <TextField label="Email" type="email" value={editClient.email} onChange={e=>setEditClient({...editClient, email: e.target.value})} required fullWidth />
+            <TextField label="New Password (leave blank to keep current)" type="password" value={editClient.password} onChange={e=>setEditClient({...editClient, password: e.target.value})} fullWidth />
+            <TextField label="Amount Due" type="number" value={editClient.amountDue} onChange={e=>setEditClient({...editClient, amountDue: e.target.value})} required fullWidth />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditClientModal(false)}>Cancel</Button>
+          <Button type="submit" form="edit-client-form-admin" variant="contained">Save Changes</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

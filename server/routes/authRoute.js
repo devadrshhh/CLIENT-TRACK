@@ -11,7 +11,7 @@ router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     const user = await User.findOne({ email });
-    if (user && user.password === password) {
+    if (user && (await user.matchPassword(password))) {
       if(user.role === 'staff' && user.staffStatus === 'disabled') {
         return res.status(403).json({ message: 'Staff account disabled' });
       }
@@ -28,6 +28,31 @@ router.post('/login', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/magiclogin', async (req, res) => {
+  const { token } = req.body;
+  try {
+    const decoded = jwt.verify(token, 'super_secret_for_client_track_1234!!');
+    const user = await User.findById(decoded.id);
+    if (user) {
+      if(user.role === 'staff' && user.staffStatus === 'disabled') {
+        return res.status(403).json({ message: 'Staff account disabled' });
+      }
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        whatsappTemplate: user.whatsappTemplate,
+        token: generateToken(user._id)
+      });
+    } else {
+      res.status(401).json({ message: 'Invalid user' });
+    }
+  } catch (error) {
+    res.status(401).json({ message: 'Invalid or expired token' });
   }
 });
 

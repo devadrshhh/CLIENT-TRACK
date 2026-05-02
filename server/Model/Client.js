@@ -9,7 +9,8 @@ var schema = mongoose.Schema({
     validityStart: Date,
     validityEnd: Date,
     paymentHistory: Array,
-    assignedStaff: String
+    assignedStaff: String,
+    amountDue: Number
 })
 
 var clientModel = mongoose.model("client", schema)

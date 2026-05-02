@@ -5,7 +5,6 @@ const User = require('../Model/User');
 const Client = require('../Model/Client');
 const History = require('../Model/History');
 
-// Manage Staff
 router.post('/staff', protect, admin, async (req, res) => {
   const { name, email, password } = req.body;
   try {
@@ -56,10 +55,32 @@ router.delete('/staff/:id', protect, admin, async (req, res) => {
   }
 });
 
-// Admin Globals
 router.get('/clients', protect, admin, async (req, res) => {
   const clients = await Client.find({});
   res.json(clients);
+});
+
+router.put('/clients/:id', protect, admin, async (req, res) => {
+  const client = await Client.findById(req.params.id);
+  if (client) {
+    const oldEmail = client.email;
+    const { name, email, password } = req.body;
+    
+    const userToUpdate = await User.findOne({ email: oldEmail, role: 'client' });
+    if (userToUpdate) {
+      if (name) userToUpdate.name = name;
+      if (email) userToUpdate.email = email;
+      if (password) userToUpdate.password = password;
+      await userToUpdate.save();
+    }
+    
+    Object.assign(client, req.body);
+    const updated = await client.save();
+    await History.create({ staffId: req.user._id, staffName: req.user.name, action: `Admin updated client: ${client.name}` });
+    res.json(updated);
+  } else {
+    res.status(404).json({ message: 'Client not found' });
+  }
 });
 
 router.delete('/clients/:id', protect, admin, async (req, res) => {

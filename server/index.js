@@ -8,7 +8,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Default admin seeder
 const seedAdmin = async () => {
   try {
     const adminExists = await User.findOne({ role: 'admin', email: 'admin@system.com' });
@@ -27,10 +26,10 @@ const seedAdmin = async () => {
 };
 seedAdmin();
 
-// Routes
 app.use('/api/auth', require('./routes/authRoute'));
 app.use('/api/admin', require('./routes/adminRoute'));
 app.use('/api/staff', require('./routes/staffRoute'));
+app.use('/api/client', require('./routes/clientRoute'));
 
 const PORT = 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

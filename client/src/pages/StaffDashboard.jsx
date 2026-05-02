@@ -2,8 +2,8 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../AuthContext';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Container, Typography, Box, Button, Tabs, Tab, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Grid, Chip } from '@mui/material';
-import { People, Warning, Assessment, Logout, Add, Delete, Payment, WhatsApp } from '@mui/icons-material';
+import { Container, Typography, Box, Button, Tabs, Tab, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Grid, Chip, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
+import { People, Warning, Assessment, Logout, Add, Delete, Payment, WhatsApp, Edit } from '@mui/icons-material';
 
 export default function StaffDashboard() {
   const { user, logout } = useContext(AuthContext);
@@ -12,8 +12,11 @@ export default function StaffDashboard() {
   const [clients, setClients] = useState([]);
   const [history, setHistory] = useState([]);
   
+  const [editClientModal, setEditClientModal] = useState(false);
+  const [editClient, setEditClient] = useState({ id: '', name: '', email: '', password: '', amountDue: '' });
+  
   const [newClient, setNewClient] = useState({
-    name: '', email: '', phone: '', personalInfo: '', validityStart: '', validityEnd: '', paymentStatus: 'pending'
+    name: '', email: '', password: '', phone: '', personalInfo: '', paymentStatus: 'pending', amountDue: ''
   });
 
   const getHeaders = () => ({ headers: { Authorization: `Bearer ${user.token}` } });
@@ -35,9 +38,18 @@ export default function StaffDashboard() {
     e.preventDefault();
     try {
       await axios.post('http://localhost:5000/api/staff/clients', newClient, getHeaders());
-      setNewClient({ name: '', email: '', phone: '', personalInfo: '', validityStart: '', validityEnd: '', paymentStatus: 'pending' });
+      setNewClient({ name: '', email: '', password: '', phone: '', personalInfo: '', paymentStatus: 'pending', amountDue: '' });
       fetchData();
     } catch (err) { alert('Error adding client'); }
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`http://localhost:5000/api/staff/clients/${editClient.id}`, editClient, getHeaders());
+      setEditClientModal(false);
+      fetchData();
+    } catch (err) { alert('Error updating client'); }
   };
 
   const deleteClient = async (id) => {
@@ -58,14 +70,26 @@ export default function StaffDashboard() {
 
   const pendingClients = clients.filter(c => new Date(c.validityEnd) < new Date() || c.paymentStatus === 'pending');
 
-  const sendWhatsApp = (client) => {
-    const particular = client.paymentHistory?.length > 0 ? client.paymentHistory[client.paymentHistory.length - 1].particular : 'Subscription';
-    let text = user.whatsappTemplate || 'Hello {ClientName}, your payment is pending.';
-    text = text.replace('{ClientName}', client.name).replace('{Particular}', particular);
-    
-    const phone = client.phone.replace(/[^0-9]/g, '');
-    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+  const sendWhatsApp = async (client) => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/staff/clients/${client._id}/token`, getHeaders());
+      const token = res.data.token;
+      const paymentlink = `http://localhost:5173/autologin?token=${token}`;
+
+      const particular = client.paymentHistory?.length > 0 ? client.paymentHistory[client.paymentHistory.length - 1].particular : 'Subscription';
+      let text = user.whatsappTemplate || 'Hello {ClientName}, your payment of {amount} for {Particular} is pending. Pay here: {paymentlink}';
+      
+      text = text.replace('{ClientName}', client.name)
+                 .replace('{Particular}', particular)
+                 .replace('{amount}', `₹${client.amountDue || 0}`)
+                 .replace('{paymentlink}', paymentlink);
+      
+      const phone = client.phone.replace(/[^0-9]/g, '');
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+    } catch (err) {
+      alert('Error generating magic link for WhatsApp');
+    }
   };
 
   return (
@@ -104,11 +128,9 @@ export default function StaffDashboard() {
                   <Box component="form" onSubmit={handleAddClient} display="flex" flexDirection="column" gap={2}>
                     <TextField label="Name" value={newClient.name} onChange={e=>setNewClient({...newClient, name: e.target.value})} required fullWidth />
                     <TextField label="Email" type="email" value={newClient.email} onChange={e=>setNewClient({...newClient, email: e.target.value})} required fullWidth />
+                    <TextField label="Password" type="password" value={newClient.password} onChange={e=>setNewClient({...newClient, password: e.target.value})} required fullWidth />
                     <TextField label="Phone / WhatsApp" value={newClient.phone} onChange={e=>setNewClient({...newClient, phone: e.target.value})} required fullWidth />
-                    <Box display="flex" gap={2}>
-                      <TextField label="Validity Start" type="date" InputLabelProps={{ shrink: true }} value={newClient.validityStart} onChange={e=>setNewClient({...newClient, validityStart: e.target.value})} required fullWidth />
-                      <TextField label="Validity End" type="date" InputLabelProps={{ shrink: true }} value={newClient.validityEnd} onChange={e=>setNewClient({...newClient, validityEnd: e.target.value})} required fullWidth />
-                    </Box>
+                    <TextField label="Amount Due" type="number" value={newClient.amountDue} onChange={e=>setNewClient({...newClient, amountDue: e.target.value})} required fullWidth />
                     <Button type="submit" variant="contained" color="secondary" startIcon={<Add />} sx={{ mt: 1 }}>Add Client</Button>
                   </Box>
                 </Paper>
@@ -135,8 +157,14 @@ export default function StaffDashboard() {
                         <Button variant="outlined" startIcon={<Payment />} onClick={() => addPayment(c._id)} fullWidth>
                           Add Payment
                         </Button>
-                        <Button variant="contained" color="error" onClick={() => deleteClient(c._id)} sx={{ minWidth: '40px', p: '6px' }}>
-                          <Delete />
+                        <Button variant="outlined" onClick={() => {
+                          setEditClient({ id: c._id, name: c.name, email: c.email, password: '', amountDue: c.amountDue || '' });
+                          setEditClientModal(true);
+                        }} sx={{ flex: 1 }}>
+                          Edit
+                        </Button>
+                        <Button variant="contained" color="error" onClick={() => deleteClient(c._id)} sx={{ flex: 1 }}>
+                          Delete
                         </Button>
                       </Box>
                     </Paper>
@@ -194,6 +222,22 @@ export default function StaffDashboard() {
           )}
         </motion.div>
       </AnimatePresence>
+
+      <Dialog open={editClientModal} onClose={() => setEditClientModal(false)}>
+        <DialogTitle>Edit Client</DialogTitle>
+        <DialogContent>
+          <Box component="form" id="edit-client-form" onSubmit={handleEditSave} sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2, minWidth: '300px' }}>
+            <TextField label="Name" value={editClient.name} onChange={e=>setEditClient({...editClient, name: e.target.value})} required fullWidth />
+            <TextField label="Email" type="email" value={editClient.email} onChange={e=>setEditClient({...editClient, email: e.target.value})} required fullWidth />
+            <TextField label="New Password (leave blank to keep current)" type="password" value={editClient.password} onChange={e=>setEditClient({...editClient, password: e.target.value})} fullWidth />
+            <TextField label="Amount Due" type="number" value={editClient.amountDue} onChange={e=>setEditClient({...editClient, amountDue: e.target.value})} required fullWidth />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditClientModal(false)}>Cancel</Button>
+          <Button type="submit" form="edit-client-form" variant="contained">Save Changes</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }
